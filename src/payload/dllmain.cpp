@@ -19,9 +19,11 @@ static auto CreateProcessW_Hook(LPCWSTR lpApplicationName, LPWSTR lpCommandLine,
 }
 
 // Restore File Name
+// 保存文件名是从CEF获取的，所有即使Patch掉了加密，下载后的文件名后缀还是.ncm的，其实下载好的文件会放在AppData\Local\NetEase\CloudMusic\TempD里，此时是真实文件名，之后通过MoveFileEx来挪到对应下载目录并改变了文件名
 // static auto MoveMediaFile_Hook(Std_WString* pSrc, Std_WString* pDst) -> void
 
 // Patch cloudmusic.dll
+// 简单来说网易云音乐会从CEF获取当前文件是否需要加密，此处Patch是为了让网易云音乐客户端认为文件总是不需要加密
 static auto LoadLibraryExW_Hook(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags) -> HMODULE
 {
     const auto lib_file_path_chars = ::wcslen(lpLibFileName);
