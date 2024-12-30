@@ -23,7 +23,7 @@ static auto CreateProcessW_Hook(LPCWSTR lpApplicationName, LPWSTR lpCommandLine,
 // static auto MoveMediaFile_Hook(Std_WString* pSrc, Std_WString* pDst) -> void
 
 // Patch cloudmusic.dll
-// 简单来说网易云音乐会从CEF获取当前文件是否需要加密，此处Patch是为了让网易云音乐客户端认为文件总是不需要加密
+// 简单来说网易云音乐会从CEF获取当前文件是否需要加密，此处Patch是为了让网易云音乐客户端认为文件总是不需要加密, 从另一个角度来说也可以直接Patch CEF
 static auto LoadLibraryExW_Hook(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags) -> HMODULE
 {
     const auto lib_file_path_chars = ::wcslen(lpLibFileName);
