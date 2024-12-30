@@ -38,6 +38,8 @@ static auto LoadLibraryExW_Hook(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFla
             {
                 cloud_music_dll_handle.Put<std::uint64_t>(0xDA6066, 0x8800000000C0C748);
             }
+
+            return cloud_music_dll_handle.Ptr<HMODULE>();
         }
     }
     return ZQF::ZxHook::SHooker<LoadLibraryExW_Hook>::FnRaw(lpLibFileName, hFile, dwFlags);
