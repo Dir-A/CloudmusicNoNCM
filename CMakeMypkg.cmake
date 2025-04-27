@@ -6,4 +6,3 @@ FetchContent_Declare(
   GIT_TAG c9a819c9db53e11a7349440e9ffc6d690055d943)
 
 FetchContent_MakeAvailable(ZxHook)
-

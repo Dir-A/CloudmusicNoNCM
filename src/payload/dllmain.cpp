@@ -2,52 +2,137 @@
 #include <ZxHook/Mem.h>
 #include <ZxHook/Inject.h>
 #include <ZxHook/SHooker.h>
+#include <string_view>
 
-static HMODULE sg_hDll{};
+static HMODULE sg_ImageBase;
 
-// Inject SubProcess
-static auto CreateProcessW_Hook(LPCWSTR lpApplicationName, LPWSTR lpCommandLine, LPSECURITY_ATTRIBUTES lpProcessAttributes, LPSECURITY_ATTRIBUTES lpThreadAttributes, BOOL bInheritHandles, DWORD dwCreationFlags, LPVOID lpEnvironment, LPCWSTR lpCurrentDirectory, LPSTARTUPINFOW lpStartupInfo, LPPROCESS_INFORMATION lpProcessInformation) -> BOOL
+
+class std_string
+{
+public:
+    union
+    {
+        char* m_pStr{};
+        char m_aStr[16];
+    };
+    size_t m_nBytes{};
+    size_t m_nCapacity{ 15 };
+
+public:
+    auto c_str() const -> const char*
+    {
+        return (this->size() >= 8) ? m_pStr : m_aStr;
+    }
+
+    auto size() const -> size_t
+    {
+        return this->m_nBytes;
+    }
+};
+
+class std_wstring
+{
+public:
+    union
+    {
+        wchar_t* m_pStr{};
+        wchar_t m_aStr[8];
+    };
+    size_t m_nChars{};
+    size_t m_nCapacity{ 7 };
+
+public:
+    auto c_str() const -> const wchar_t*
+    {
+        return (this->size() >= 8) ? m_pStr : m_aStr;
+    }
+
+    auto data() -> wchar_t*
+    {
+        return (this->size() >= 8) ? m_pStr : m_aStr;
+    }
+
+    auto size() const -> size_t
+    {
+        return this->m_nChars;
+    }
+};
+
+struct NCM_AddID3_Content_Parame
+{
+    std_wstring org_path;
+    std_wstring pic_path;
+    std_string info_json;
+    void* un_obj;
+    size_t un_0;
+    bool encrypt_flag;
+    bool decrypt_flag;
+    uint32_t un_1;
+    std_wstring save_path;
+    std_wstring save_dir;
+    std_wstring un_str;
+};
+
+static auto PathGetFileName(const std::wstring_view msPath) -> std::wstring_view
+{
+    const auto pos = msPath.rfind(L'\\');
+    return pos != std::wstring_view::npos ? msPath.substr(pos + 1) : msPath;
+}
+
+static auto __fastcall NCM_Storage_AddID3_Content_Hook(const std_string* pIDStr, NCM_AddID3_Content_Parame* pParam) -> void
+{
+    if (pParam->encrypt_flag)
+    {
+        const std::wstring_view org_path{ pParam->org_path.c_str(),pParam->org_path.size() };
+        const auto org_file_name = PathGetFileName(org_path);
+
+        const std::wstring_view save_path{ pParam->save_path.c_str(),pParam->save_path.size() };
+        if ((pParam->save_dir.size() + org_file_name.size() + 2) <= pParam->save_path.m_nCapacity)
+        {
+            pParam->encrypt_flag = false;
+
+            std::memcpy(pParam->save_path.data(), pParam->save_dir.c_str(), pParam->save_dir.size() * 2);
+            pParam->save_path.data()[pParam->save_dir.size()] = L'\\';
+            pParam->save_path.m_nChars = pParam->save_dir.size() + 1;
+
+            std::memcpy(pParam->save_path.data() + pParam->save_path.size(), org_file_name.data(), org_file_name.size() * 2);
+            pParam->save_path.m_nChars += org_file_name.size();
+            pParam->save_path.data()[pParam->save_path.size()] = {};
+        }
+    }
+
+    ZQF::ZxHook::SHooker<NCM_Storage_AddID3_Content_Hook>::FnRaw(pIDStr, pParam);
+}
+
+static auto __fastcall CreateProcessW_Hook(LPCWSTR lpApplicationName, LPWSTR lpCommandLine, LPSECURITY_ATTRIBUTES lpProcessAttributes, LPSECURITY_ATTRIBUTES lpThreadAttributes, BOOL bInheritHandles, DWORD dwCreationFlags, LPVOID lpEnvironment, LPCWSTR lpCurrentDirectory, LPSTARTUPINFOW lpStartupInfo, LPPROCESS_INFORMATION lpProcessInformation) -> BOOL
 {
     if (::wcsstr(lpCommandLine, L"cloudmusic.exe"))
     {
         char dll_path[MAX_PATH];
-        ::GetModuleFileNameA(sg_hDll, dll_path, MAX_PATH);
+        ::GetModuleFileNameA(sg_ImageBase, dll_path, MAX_PATH);
         return ZQF::ZxLoader::ZxCreateProcess(lpApplicationName, lpCommandLine, lpProcessAttributes, lpThreadAttributes, bInheritHandles, dwCreationFlags, lpEnvironment, lpCurrentDirectory, lpStartupInfo, lpProcessInformation, ZQF::ZxHook::SHooker<CreateProcessW_Hook>::FnRaw, { dll_path });
     }
     
     return ZQF::ZxHook::SHooker<CreateProcessW_Hook>::FnRaw(lpApplicationName, lpCommandLine, lpProcessAttributes, lpThreadAttributes, bInheritHandles, dwCreationFlags, lpEnvironment, lpCurrentDirectory, lpStartupInfo, lpProcessInformation);
 }
 
-// Restore File Name
-// 保存文件名是从CEF获取的，所有即使Patch掉了加密，下载后的文件名后缀还是.ncm的，其实下载好的文件会放在AppData\Local\NetEase\CloudMusic\TempD里，此时是真实文件名，之后通过MoveFileEx来挪到对应下载目录并改变了文件名
-// static auto MoveMediaFile_Hook(Std_WString* pSrc, Std_WString* pDst) -> void
-
-// Patch cloudmusic.dll
-// 简单来说网易云音乐会从CEF获取当前文件是否需要加密，此处Patch是为了让网易云音乐客户端认为文件总是不需要加密, 从另一个角度来说也可以直接Patch CEF
-static auto LoadLibraryExW_Hook(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags) -> HMODULE
+static auto __fastcall LoadLibraryExW_Hook(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags) -> HMODULE
 {
     const auto lib_file_path_chars = ::wcslen(lpLibFileName);
     if (lib_file_path_chars >= 14)
     {
         if (::wcscmp(lpLibFileName + (lib_file_path_chars - 14), L"cloudmusic.dll") == 0)
         {
-            // Build 203152 | Patch Cryptor Checker
             const ZQF::ZxHook::VirtualAddress cloud_music_dll_handle = ZQF::ZxHook::SHooker<LoadLibraryExW_Hook>::FnRaw(lpLibFileName, hFile, dwFlags);
-            ZQF::ZxHook::VirtualProtector::Set(cloud_music_dll_handle.VA() + 0xDA6066, ZQF::ZxHook::VirtualProperty::ReadWriteExecute, 8);
-            if (cloud_music_dll_handle.Get<std::uint64_t>(0xDA6066) == 0x880000025485B60F)
-            {
-                cloud_music_dll_handle.Put<std::uint64_t>(0xDA6066, 0x8800000000C0C748);
-            }
-
+            ZQF::ZxHook::SHooker<NCM_Storage_AddID3_Content_Hook>::Commit(cloud_music_dll_handle.VA(), 0xDFA610); // build 203580
             return cloud_music_dll_handle.Ptr<HMODULE>();
         }
     }
     return ZQF::ZxHook::SHooker<LoadLibraryExW_Hook>::FnRaw(lpLibFileName, hFile, dwFlags);
 }
 
-static auto StartHook(HMODULE hModule) -> void
+static auto StartHook() -> void
 {
-    sg_hDll = hModule;
     ZQF::ZxHook::SHookerDetour::AfterWith();
     ZQF::ZxHook::SHooker<CreateProcessW_Hook>::Commit(::CreateProcessW);
     ZQF::ZxHook::SHooker<LoadLibraryExW_Hook>::Commit(::LoadLibraryExW);
@@ -58,8 +143,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID /* lpRes
     switch (ul_reason_for_call)
     {
     case DLL_PROCESS_ATTACH:
+        sg_ImageBase = hModule;
         ::DisableThreadLibraryCalls(hModule);
-        ::StartHook(hModule);
+        ::StartHook();
         break;
     case DLL_THREAD_ATTACH:
         break;
