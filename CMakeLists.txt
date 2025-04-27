@@ -1,15 +1,15 @@
 # CloudmusicNoNCM
 cmake_minimum_required(VERSION 3.25)
 
-# Project Name
+# Project
 project(CloudmusicNoNCM_Main)
 
 # Load Config
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-    include(CMakeMycfg.cmake)
-    include(CMakeMypkg.cmake)
+    include(cmake/ZQFSettings.cmake)
+    include(cmake/ZQFPackages.cmake)
 endif()
 
 # Source
-add_subdirectory(src)
+add_subdirectory("src")
 
